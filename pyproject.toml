@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "exaviz-poe-mqtt-bridge"
+version = "0.1.0"
+description = "Host-side daemon exposing Exaviz Cruiser/Interceptor PoE ports to Home Assistant over MQTT Discovery"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Exaviz PoE MQTT Bridge contributors" },
+]
+keywords = ["exaviz", "cruiser", "poe", "mqtt", "home-assistant"]
+classifiers = [
+    "Environment :: No Input/Output (Daemon)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Home Automation",
+]
+dependencies = [
+    "paho-mqtt>=2.0",
+    "PyYAML>=6.0",
+    "aiohttp>=3.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+exaviz-poe-mqtt-bridge = "exaviz_poe_mqtt_bridge.daemon:main"
+
+[project.urls]
+Homepage = "https://github.com/exavizco/ha-poe-plugin"
+
+[tool.setuptools.packages.find]
+include = ["exaviz_poe_mqtt_bridge*"]
+
+[tool.setuptools.package-data]
+exaviz_poe_mqtt_bridge = ["static/*.html"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

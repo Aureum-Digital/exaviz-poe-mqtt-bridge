@@ -1,0 +1,29 @@
+# Exaviz PoE MQTT bridge configuration
+# Copy to /etc/exaviz-poe-mqtt-bridge/config.yaml and edit.
+
+mqtt:
+  host: 10.0.4.180          # MQTT broker (e.g. the HAOS VM or a Mosquitto host)
+  port: 1883
+  username: homeassistant
+  password: changeme
+  client_id: exaviz-poe-bridge
+  discovery_prefix: homeassistant
+  base_topic: exaviz/cruiser/poe
+
+bridge:
+  device_name: Exaviz Cruiser CM5
+  device_id: cruiser_cm5
+  model: Cruiser CM5
+  poll_interval: 10          # seconds between telemetry updates
+  pse_device: /dev/pse       # ESP32 serial interface (udev symlink to ttyAMA3)
+
+  # Advanced (defaults shown):
+  # serial_read_seconds: 3        # per-poll ESP32 stream capture window
+  # enable_reset_workaround: true # ESP32 reset after enable-port (firmware bug
+  #                               # workaround, same as upstream ha-poe-plugin)
+  # reset_settle_seconds: 8       # wait after reset for re-init + detection
+
+web:
+  enabled: false             # embedded web UI (no auth — trusted networks only)
+  host: 0.0.0.0
+  port: 8088

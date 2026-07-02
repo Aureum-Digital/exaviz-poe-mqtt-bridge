@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exaviz PoE</title>
+<style>
+  :root {
+    --bg: #14171a; --panel: #1d2126; --border: #2c3238;
+    --text: #e8eaed; --dim: #8a9199;
+    --green: #7ac142; --green-glow: rgba(122,193,66,.35);
+    --white: #dfe3e7; --amber: #e5a50a; --red: #d9534f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 24px 16px;
+  }
+  header { width: 100%; max-width: 860px; display: flex; align-items: baseline; gap: 10px; margin-bottom: 18px; }
+  #main {
+    width: 100%; max-width: 860px; display: flex; gap: 18px;
+    align-items: flex-start; justify-content: center;
+  }
+  header h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  header .meta { color: var(--dim); font-size: 12px; }
+  #conn { margin-left: auto; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  #conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+  #conn.offline .dot { background: var(--red); }
+
+  .switch-body {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 26px; display: grid; grid-auto-flow: column;
+    grid-template-rows: repeat(2, auto); gap: 14px 18px;
+  }
+  .port { display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; }
+  .jack {
+    width: 52px; height: 44px; border-radius: 6px;
+    border: 2px solid var(--border); background: #23282e;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .25s; position: relative;
+  }
+  .jack::after {  /* RJ45 notch */
+    content: ""; position: absolute; bottom: -2px; width: 20px; height: 7px;
+    background: var(--bg); border: 2px solid var(--border); border-bottom: none;
+    border-radius: 3px 3px 0 0;
+  }
+  .port .label { font-size: 12px; color: var(--dim); }
+
+  /* device drawing PoE power: green bolt + watts inside the jack */
+  .jack { flex-direction: column; gap: 1px; }
+  .bolt {
+    color: var(--green); line-height: 0;
+    filter: drop-shadow(0 0 3px var(--green-glow));
+  }
+  .jwatts { font-size: 9px; font-weight: 600; color: var(--green); line-height: 1; }
+  .port.off .jack { opacity: .8; border-color: #454e57; }
+  .port.off .jack::after { border-color: #454e57; }
+  .port.off .jack::before {  /* ✕ in the border colour: PoE disabled */
+    content: "✕"; font-size: 17px; font-weight: 600; line-height: 1;
+    color: #454e57;
+  }
+
+  .port.enabled .jack { border-color: var(--white); background: #3a4046; }
+  .port.linked .jack {
+    border-color: var(--green); background: rgba(122,193,66,.18);
+    box-shadow: 0 0 12px var(--green-glow);
+  }
+  .port.linked .watts { color: var(--green); }
+  .port.selected .jack { outline: 2px solid #5ab3f0; outline-offset: 3px; }
+  .port.busy .jack { border-color: var(--amber); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+
+  #detail {
+    width: 320px; flex-shrink: 0;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 22px; display: none;
+  }
+  #detail.show { display: block; }
+  @media (max-width: 720px) {
+    #main { flex-direction: column; align-items: center; }
+    #detail { width: 100%; max-width: 460px; }
+  }
+  #detail h2 { margin: 0 0 4px; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+  #detail .state-chip {
+    font-size: 11px; padding: 2px 9px; border-radius: 10px;
+    background: #2c3238; color: var(--dim);
+  }
+  #detail .state-chip.on { background: rgba(122,193,66,.18); color: var(--green); }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  td { padding: 5px 4px; border-bottom: 1px solid var(--border); }
+  td:first-child { color: var(--dim); width: 45%; }
+  tr:last-child td { border-bottom: none; }
+  #toggle {
+    margin-top: 14px; padding: 9px 22px; border-radius: 8px; border: none;
+    font-size: 14px; font-weight: 600; cursor: pointer; color: #14171a;
+    background: var(--green); width: 100%;
+  }
+  #toggle.off { background: #aab2ba; }
+  #toggle:disabled { opacity: .5; cursor: wait; }
+  footer { margin-top: 16px; color: var(--dim); font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="devname">Exaviz PoE</h1>
+  <span class="meta" id="devmeta"></span>
+  <span id="conn"><span class="dot"></span><span id="conntext">connected</span></span>
+</header>
+
+<div id="main">
+  <div class="switch-body" id="ports"></div>
+
+  <div id="detail">
+    <h2>
+      <span id="d-title"></span>
+      <span class="state-chip" id="d-state"></span>
+    </h2>
+    <table id="d-table"></table>
+    <button id="toggle"></button>
+  </div>
+</div>
+
+<footer id="foot"></footer>
+
+<script>
+"use strict";
+let state = null;          // last /api/status payload
+let selected = null;       // selected port_id
+let busy = new Set();      // ports with in-flight commands
+
+const $ = id => document.getElementById(id);
+const fmt = (v, unit, dp=1) => (v === null || v === undefined) ? "—" : `${Number(v).toFixed(dp)} ${unit}`;
+const fmtBytes = v => {
+  if (v === null || v === undefined) return "—";
+  const u = ["B","KB","MB","GB","TB"]; let i = 0;
+  while (v >= 1024 && i < u.length-1) { v /= 1024; i++; }
+  return `${v.toFixed(i ? 1 : 0)} ${u[i]}`;
+};
+
+// Physical layout (back of Cruiser board): P1 P3 P5 P7 / P2 P4 P6 P8.
+// The grid uses column flow with 2 rows, so natural port order works.
+function renderPorts() {
+  const el = $("ports");
+  el.innerHTML = "";
+  const ids = Object.keys(state.ports).sort(
+    (a, b) => parseInt(a.replace("poe","")) - parseInt(b.replace("poe",""))
+  );
+  for (const id of ids) {
+    const p = state.ports[id];
+    const num = parseInt(id.replace("poe","")) + 1;
+    const linked = p.link_state === "up";
+    // A device only counts as PoE-powered when it actually draws power
+    // (same 0.5 W threshold as the official HA plugin) — a non-PoE
+    // device links up but draws nothing.
+    const powered = (p.power_watts ?? 0) >= 0.5;
+    // Blink while a command is in flight (local) or awaiting telemetry
+    // confirmation from the daemon (p.pending) — covers ON and OFF.
+    const working = busy.has(id) || p.pending;
+    const div = document.createElement("div");
+    div.className = "port"
+      + (p.enabled ? " enabled" : " off")
+      + (linked && !p.pending ? " linked" : "")
+      + (id === selected ? " selected" : "")
+      + (working ? " busy" : "");
+    const boltHtml = powered && !p.pending
+      ? `<span class="bolt"><svg viewBox="0 0 24 24" width="15" height="15">
+           <path fill="currentColor" d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
+         </svg></span>
+         <span class="jwatts">${fmt(p.power_watts, "W")}</span>`
+      : "";
+    div.innerHTML = `
+      <div class="jack">${boltHtml}</div>
+      <span class="label">P${num}</span>`;
+    div.onclick = () => { selected = (selected === id) ? null : id; render(); };
+    el.appendChild(div);
+  }
+}
+
+function renderDetail() {
+  const box = $("detail");
+  if (!selected || !state.ports[selected]) { box.className = ""; return; }
+  const p = state.ports[selected];
+  const num = parseInt(selected.replace("poe","")) + 1;
+  box.className = "show";
+  $("d-title").textContent = `Port ${num} (${selected})`;
+  const chip = $("d-state");
+  chip.textContent = p.pending ? "applying…" : (p.state ?? "unknown");
+  chip.className = "state-chip" + (p.enabled && !p.pending ? " on" : "");
+
+  const dev = p.connected_device;
+  const powered = (p.power_watts ?? 0) >= 0.5;
+  const rows = [
+    ["PoE power", p.enabled ? "enabled" : "disabled"],
+    ["PoE device", powered ? "⚡ drawing power" : "no"],
+    ["Power draw", powered ? fmt(p.power_watts, "W") : "—"],
+    ["Voltage", fmt(p.voltage_volts, "V")],
+    ["Current", fmt(p.current_milliamps, "mA", 0)],
+    ["PoE class", p.class ?? "—"],
+    ["Allocated", fmt(p.allocated_power_watts, "W")],
+    ["Temperature", fmt(p.temperature_celsius, "°C")],
+    ["Link", p.link_state ?? "—"],
+    ["Speed", p.speed_mbps ? `${p.speed_mbps} Mbps` : "—"],
+    ["Traffic RX / TX", `${fmtBytes(p.rx_bytes)} / ${fmtBytes(p.tx_bytes)}`],
+    ["Connected device", dev
+      ? [dev.hostname, dev.ip_address, dev.mac_address].filter(Boolean).join(" · ")
+      : "none"],
+  ];
+  $("d-table").innerHTML = rows
+    .map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+
+  const btn = $("toggle");
+  const working = busy.has(selected) || p.pending;
+  btn.disabled = working;
+  btn.textContent = working
+    ? (p.enabled ? "Enabling…" : "Disabling…")
+    : (p.enabled ? "Disable PoE" : "Enable PoE");
+  btn.className = p.enabled ? "off" : "";
+  btn.onclick = () => togglePort(selected, !p.enabled);
+}
+
+function render() {
+  if (!state) return;
+  $("devname").textContent = state.device.name;
+  $("devmeta").textContent = `${state.device.model} · ${state.device.board_type}`;
+  $("foot").textContent =
+    `exaviz-poe-mqtt-bridge ${state.device.version} · updated ` +
+    (state.updated_at ? new Date(state.updated_at * 1000).toLocaleTimeString() : "never");
+  renderPorts();
+  renderDetail();
+}
+
+async function togglePort(id, on) {
+  if (!on && state.ports[id]?.link_state === "up"
+      && !confirm(`Port ${parseInt(id.replace("poe","")) + 1} has an active link. Cut PoE power?`)) return;
+  busy.add(id); render();
+  try {
+    const r = await fetch(`/api/ports/${id}/power`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on }),
+    });
+    if (!r.ok) alert((await r.json()).error ?? `HTTP ${r.status}`);
+  } catch (e) {
+    alert(`Request failed: ${e}`);
+  } finally {
+    busy.delete(id);
+    await refresh();
+  }
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/status");
+    state = await r.json();
+    $("conn").className = ""; $("conntext").textContent = "connected";
+  } catch {
+    $("conn").className = "offline"; $("conntext").textContent = "offline";
+  }
+  render();
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

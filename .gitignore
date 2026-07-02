@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+# Local (contains real MQTT credentials)
+config.local.yaml
+
+# Editor/tooling
+.claude/
+.DS_Store

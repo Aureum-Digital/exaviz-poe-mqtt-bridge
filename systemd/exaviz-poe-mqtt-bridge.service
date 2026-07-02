@@ -1,0 +1,27 @@
+[Unit]
+Description=Exaviz PoE MQTT bridge (Home Assistant MQTT Discovery)
+Documentation=https://github.com/exavizco/ha-poe-plugin
+After=network-online.target
+Wants=network-online.target
+# /dev/pse appears once the udev rule from exaviz-dkms fires
+ConditionPathExists=/etc/exaviz-poe-mqtt-bridge/config.yaml
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/exaviz-poe-mqtt-bridge --config /etc/exaviz-poe-mqtt-bridge/config.yaml
+Restart=always
+RestartSec=5
+
+# Needs root for /dev/pse writes and `ip link set` on poe* interfaces,
+# but lock everything else down.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+AmbientCapabilities=CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target
