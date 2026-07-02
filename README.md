@@ -99,10 +99,13 @@ To inspect raw traffic: MQTT integration → *Listen to a topic* →
 ## Web UI (optional)
 
 A lightweight embedded status page (no build step, single HTML file served
-by aiohttp) showing the physical port layout Ubiquiti-style: grey when
-PoE is disabled, white outline when enabled with no link, green when a
-device is connected. Clicking a port shows every value published to HA
+by aiohttp) showing the physical port layout Ubiquiti-style: crossed out
+when PoE is disabled, white outline when enabled with no link, green when
+a device is connected — with a bolt and live power draw when the device
+actually draws PoE. Clicking a port shows every value published to HA
 and a button to enable/disable PoE power on that port.
+
+![Web UI](docs/images/webui.png)
 
 Enable it in the config:
 
