@@ -32,7 +32,7 @@ Ubuntu host (RPi CM5 / Cruiser carrier board)
 | Voltage | `sensor` (V, diagnostic) | ESP32 telemetry |
 | Current | `sensor` (mA, diagnostic) | ESP32 telemetry |
 | Link | `binary_sensor` (connectivity) | sysfs `operstate` |
-| Connected Device | `sensor` + JSON attributes | ARP/NDP neighbour table |
+| Connected Device | `sensor` + JSON attributes | ARP/NDP table (routed) / bridge FDB + `arp-scan` (switch mode) |
 
 All entities share one HA device (`Exaviz Cruiser CM5`) and a single
 availability topic backed by an MQTT Last Will — if the daemon dies, every
@@ -47,6 +47,8 @@ entity goes *unavailable* in HA.
 - An MQTT broker reachable from both the host and HAOS
   (typically the Mosquitto add-on inside HAOS)
 - Python ≥ 3.10
+- `arp-scan` (recommended when running in switch mode — see
+  [Network modes](#network-modes)): `sudo apt install arp-scan`
 
 > **Running HAOS in a KVM VM on the Cruiser itself?** See
 > [INSTALL.md](INSTALL.md) for the full end-to-end guide (host setup, VM
@@ -167,6 +169,44 @@ exaviz/cruiser/poe/poe0/attributes   JSON: state, class, temp, traffic… (retai
 Discovery configs are published retained under
 `homeassistant/{switch,sensor,binary_sensor}/exaviz_cruiser_cm5_poeN_*/config`
 and re-published on every reconnect.
+
+## Network modes
+
+The bridge auto-detects how the Cruiser's PoE ports are configured and
+adapts the connected-device detection accordingly — no configuration
+needed.
+
+**Routed mode** (Exaviz factory default): each `poeN` interface is a
+separate L3 port on the host. Devices exchange traffic with the board
+itself, so their IP/MAC appear in the port's own ARP/NDP neighbour table
+(`ip neigh show dev poeN`). Note that the connected-device sensor only
+reports data if the ports actually have per-port subnets/DHCP configured.
+
+**Switch mode** (flat L2): the `poeN` ports and the WAN uplink are
+enslaved to a Linux bridge (e.g. `br0`), turning the Cruiser into a plain
+switch — devices lease directly from your router. Two things change:
+
+1. Neighbour entries move from the port to the bridge, and — more
+   importantly — they usually never appear at all: the board is now an
+   L2 bystander that never exchanges traffic with the devices it
+   switches. `ip neigh` alone is structurally blind here, no matter how
+   often the device renews its lease.
+2. The bridge therefore resolves devices in three steps, per port:
+   - **bridge FDB** (`bridge fdb show`) → the MAC learned on each port;
+   - MAC → IP via the bridge's neighbour table if present, else via an
+     **`arp-scan` sweep** of the segment (~1 s, one scan cached 30 s
+     serves all ports — install `arp-scan` for this), else via a short
+     **passive `tcpdump` capture** of the device's own chatter;
+   - reverse DNS for the hostname.
+
+   Without `arp-scan` installed, detection still works but may lag or
+   report only the MAC for quiet devices.
+
+PoE telemetry, power control, link state and traffic stats are identical
+in both modes. Toggling a port OFF in switch mode detaches it from the
+bridge (`ip link down`) in addition to cutting PoE power — non-PoE
+devices lose connectivity too, which is usually what you want from a
+"disable port" switch.
 
 ## How it works
 
