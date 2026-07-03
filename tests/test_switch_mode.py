@@ -38,6 +38,65 @@ class TestParseFdbMacs:
         assert parse_fdb_macs("garbage\n\ndev poe0\n", "poe0") == []
 
 
+class TestParseCaptureSrcIp:
+    def test_ip_packet_source(self):
+        from exaviz_poe_mqtt_bridge.poe import parse_capture_src_ip
+
+        capture = (
+            "10:41:22.42 IP 10.0.4.212.52034 > 10.0.4.102.53: 73+ AAAA? x. (34)\n"
+            "10:41:22.44 IP 10.0.4.212.58932 > 51.145.123.29.123: NTPv4, Client\n"
+        )
+        assert parse_capture_src_ip(capture) == "10.0.4.212"
+
+    def test_arp_tell_source(self):
+        from exaviz_poe_mqtt_bridge.poe import parse_capture_src_ip
+
+        capture = "10:40:38.28 ARP, Request who-has 10.0.4.1 tell 10.0.4.212, length 46\n"
+        assert parse_capture_src_ip(capture) == "10.0.4.212"
+
+    def test_dhcp_discover_zero_ip_skipped(self):
+        from exaviz_poe_mqtt_bridge.poe import parse_capture_src_ip
+
+        capture = (
+            "10:40:00.00 IP 0.0.0.0.68 > 255.255.255.255.67: BOOTP/DHCP, Request\n"
+            "10:40:01.00 IP 10.0.4.212.68 > 10.0.4.1.67: BOOTP/DHCP, Request\n"
+        )
+        assert parse_capture_src_ip(capture) == "10.0.4.212"
+
+    def test_ipv6_and_garbage_ignored(self):
+        from exaviz_poe_mqtt_bridge.poe import parse_capture_src_ip
+
+        capture = (
+            "10:40:38.11 IP6 fe80::babe > ff02::2: ICMP6, router solicitation\n"
+            "garbage line\n"
+        )
+        assert parse_capture_src_ip(capture) is None
+
+
+class TestParseArpScan:
+    def test_mac_ip_map(self):
+        from exaviz_poe_mqtt_bridge.poe import parse_arp_scan
+
+        scan = (
+            "Interface: br0, type: EN10MB, MAC: ae:10:23:54:11:46, IPv4: 10.0.4.213\n"
+            "Starting arp-scan 1.10.0 with 256 hosts\n"
+            "10.0.4.1\t0e:ea:14:48:ed:2e\tUnknown vendor\n"
+            "10.0.4.212\tD0:3B:F4:03:A6:F1\t(Unknown)\n"
+            "\n"
+            "3 packets received by filter, 0 packets dropped by kernel\n"
+        )
+        result = parse_arp_scan(scan)
+        assert result["d0:3b:f4:03:a6:f1"] == "10.0.4.212"
+        assert result["0e:ea:14:48:ed:2e"] == "10.0.4.1"
+        assert len(result) == 2
+
+    def test_empty_or_garbage(self):
+        from exaviz_poe_mqtt_bridge.poe import parse_arp_scan
+
+        assert parse_arp_scan("") == {}
+        assert parse_arp_scan("no devices found\n") == {}
+
+
 class TestParseNeighForMacs:
     def test_ip_resolved_for_learned_mac(self):
         device = parse_neigh_for_macs(NEIGH, ["d0:3b:f4:03:a6:f1"])

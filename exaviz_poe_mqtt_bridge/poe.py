@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -314,14 +315,87 @@ def _bridge_master(interface: str) -> str | None:
         return None
 
 
-async def _run(cmd: list[str]) -> str | None:
+async def _run(cmd: list[str], ok_codes: tuple[int, ...] = (0,)) -> str | None:
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await proc.communicate()
-    return stdout.decode() if proc.returncode == 0 else None
+    return stdout.decode() if proc.returncode in ok_codes else None
+
+
+# tcpdump -n lines: "IP 10.0.4.212.52034 > ..." / "ARP, Request who-has X tell 10.0.4.212"
+_CAPTURE_IP_SRC = re.compile(r"\bIP (\d+\.\d+\.\d+\.\d+)\.\d+ >")
+_CAPTURE_ARP_TELL = re.compile(r"\btell (\d+\.\d+\.\d+\.\d+)")
+
+
+def parse_capture_src_ip(capture_text: str) -> str | None:
+    """Extract the device's IPv4 from a tcpdump capture of its traffic."""
+    for line in capture_text.splitlines():
+        match = _CAPTURE_IP_SRC.search(line) or _CAPTURE_ARP_TELL.search(line)
+        if match and match.group(1) != "0.0.0.0":
+            return match.group(1)
+    return None
+
+
+# arp-scan line: "10.0.4.212\td0:3b:f4:03:a6:f1\tVendor Name"
+_ARP_SCAN_LINE = re.compile(r"^(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f:]{17})", re.IGNORECASE)
+
+_ARP_SCAN_TTL = 30.0  # seconds; one scan serves a whole poll cycle
+_arp_scan_cache: dict[str, tuple[float, dict[str, str]]] = {}
+_arp_scan_lock = asyncio.Lock()
+
+
+def parse_arp_scan(scan_text: str) -> dict[str, str]:
+    """Parse arp-scan output into a MAC → IP map."""
+    result: dict[str, str] = {}
+    for line in scan_text.splitlines():
+        match = _ARP_SCAN_LINE.match(line.strip())
+        if match:
+            result.setdefault(match.group(2).lower(), match.group(1))
+    return result
+
+
+async def _arp_scan_bridge(bridge: str) -> dict[str, str]:
+    """MAC → IP map for the bridge segment via arp-scan, cached briefly.
+
+    In switch mode the board never exchanges traffic with port devices,
+    so the kernel neighbour table stays empty — an active ARP sweep is
+    the reliable way to map the FDB-learned MACs to addresses.  The
+    cache + lock make the 8 concurrent per-port lookups share one scan.
+    Returns {} if arp-scan is not installed (fallback paths take over).
+    """
+    async with _arp_scan_lock:
+        cached = _arp_scan_cache.get(bridge)
+        if cached and time.monotonic() - cached[0] < _ARP_SCAN_TTL:
+            return cached[1]
+        text = await _run(
+            ["arp-scan", "--interface", bridge, "--localnet", "--retry=2"]
+        )
+        result = parse_arp_scan(text) if text else {}
+        _arp_scan_cache[bridge] = (time.monotonic(), result)
+        return result
+
+
+async def _discover_ip_by_capture(interface: str, mac: str) -> str | None:
+    """Sniff the port briefly to learn a device's IPv4 (switch mode).
+
+    In a flat L2 bridge the board is a bystander: it never exchanges
+    traffic with the device, so its neighbour table stays empty even
+    though the device is online.  Most devices chatter constantly
+    (ARP, DNS, NTP, mDNS) — a short capture filtered by the FDB-learned
+    MAC reveals their source address.  `timeout` exit code 124 just
+    means fewer packets than -c arrived; whatever was captured counts.
+    """
+    text = await _run(
+        [
+            "timeout", "3", "tcpdump", "-i", interface, "-n", "-c", "4",
+            f"ether src {mac} and (arp or ip)",
+        ],
+        ok_codes=(0, 124),
+    )
+    return parse_capture_src_ip(text) if text else None
 
 
 async def _get_connected_device_from_fdb(interface: str, bridge: str) -> dict[str, Any] | None:
@@ -339,9 +413,25 @@ async def _get_connected_device_from_fdb(interface: str, bridge: str) -> dict[st
 
     neigh_text = await _run(["ip", "neigh", "show", "dev", bridge]) or ""
     device = parse_neigh_for_macs(neigh_text, macs)
+
     if device is None:
-        # No IP (yet) — still report the learned MAC; better than nothing.
-        return {"mac_address": macs[0]}
+        # The board is an L2 bystander, so the neighbour table won't
+        # populate on its own.  Active ARP sweep first (fast, reliable),
+        # then passive capture of the device's own chatter as fallback
+        # when arp-scan isn't installed.
+        scan = await _arp_scan_bridge(bridge)
+        ip = None
+        for mac in macs:
+            if mac in scan:
+                ip = scan[mac]
+                device = {"ip_address": ip, "mac_address": mac, "arp_state": "ARP-SCAN"}
+                break
+        if device is None:
+            ip = await _discover_ip_by_capture(interface, macs[0])
+            if ip is None:
+                # No trace of an address — report the learned MAC alone.
+                return {"mac_address": macs[0]}
+            device = {"ip_address": ip, "mac_address": macs[0], "arp_state": "CAPTURED"}
 
     hostname = await _resolve_hostname(device["ip_address"])
     if hostname:

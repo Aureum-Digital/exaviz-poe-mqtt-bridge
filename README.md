@@ -182,7 +182,9 @@ ha-poe-plugin** (see attribution headers in
   Link state and traffic come from sysfs; the connected device from the
   ARP/NDP table — and when the port is enslaved to a bridge (Exaviz
   "switch mode", flat L2), from the bridge FDB (learned MAC per port)
-  cross-referenced with the bridge's neighbour table.
+  resolved to an IP via the bridge's neighbour table, an `arp-scan`
+  sweep of the segment (install `arp-scan` for this; cached 30 s), or a
+  short passive capture of the device's own traffic as a last resort.
 - **Control** — writes `enable-port <pse> <port>` / `disable-port <pse>
   <port>` to `/dev/pse` and sets the interface admin state with
   `ip link`. Port numbers map as: Linux `poe0-3` → ESP32 PSE 1, `poe4-7`

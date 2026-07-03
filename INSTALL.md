@@ -213,7 +213,7 @@ If you enabled the web UI, browse to `http://<host>:8088` — note it has
 | No `Connected to MQTT broker` in logs, `Cannot reach MQTT broker` warnings | Broker unreachable from the host — you're probably using the VM's LAN IP; use the NAT address (§3) |
 | `MQTT connect failed: Not authorized` | Wrong credentials — use a real HA user (§4) |
 | All ports show OFF / 0 W | Normal if the `poe*` interfaces are admin-down and nothing is connected; enable a port from HA and plug in a device |
-| Connected-device sensor shows `none` despite an active link | The device has no IP: current `exaviz-netplan` doesn't yet configure per-port subnets/DHCP on Ubuntu (Exaviz is working on it). Link, power and control still work |
+| Connected-device sensor shows `none` despite an active link | Routed mode: the device has no IP (per-port subnets/DHCP not configured). Switch mode (bridged ports): install `arp-scan` on the host — the board is an L2 bystander there and needs an active ARP sweep to map port MACs to addresses (`sudo apt install arp-scan`) |
 | Bridge entities `unavailable` in HA | The daemon is down (availability topic went `offline` via MQTT Last Will) — `systemctl status exaviz-poe-mqtt-bridge` |
 
 ## 8. Known limitations
