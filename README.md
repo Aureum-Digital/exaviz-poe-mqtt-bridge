@@ -180,7 +180,9 @@ ha-poe-plugin** (see attribution headers in
   `0-0: power-on 3 15 48.500 0.325/0.800 35.2`. Actual power is computed
   as V × I (the protocol's "power" field is only the class allocation).
   Link state and traffic come from sysfs; the connected device from the
-  ARP/NDP table.
+  ARP/NDP table — and when the port is enslaved to a bridge (Exaviz
+  "switch mode", flat L2), from the bridge FDB (learned MAC per port)
+  cross-referenced with the bridge's neighbour table.
 - **Control** — writes `enable-port <pse> <port>` / `disable-port <pse>
   <port>` to `/dev/pse` and sets the interface admin state with
   `ip link`. Port numbers map as: Linux `poe0-3` → ESP32 PSE 1, `poe4-7`

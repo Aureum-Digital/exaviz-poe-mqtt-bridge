@@ -270,9 +270,97 @@ async def _resolve_hostname(ip_address: str) -> str | None:
         return None
 
 
-async def get_connected_device_from_arp(interface: str) -> dict[str, Any] | None:
-    """Get connected device information from the ARP/NDP neighbour table."""
+def parse_fdb_macs(fdb_text: str, interface: str) -> list[str]:
+    """Extract externally-learned MACs for a bridge port from `bridge fdb show`.
+
+    Skips `permanent`/`self` entries (the port's own MAC) — only dynamically
+    learned addresses belong to connected devices.
+    """
+    macs: list[str] = []
+    for line in fdb_text.splitlines():
+        parts = line.split()
+        if len(parts) < 3 or parts[0].count(":") != 5:
+            continue
+        if "permanent" in parts or "self" in parts:
+            continue
+        try:
+            if parts[parts.index("dev") + 1] != interface:
+                continue
+        except (ValueError, IndexError):
+            continue
+        macs.append(parts[0].lower())
+    return macs
+
+
+def parse_neigh_for_macs(neigh_text: str, macs: list[str]) -> dict[str, Any] | None:
+    """Find the first neighbour entry whose lladdr matches one of `macs`."""
+    for line in neigh_text.splitlines():
+        match = _IPV4_NEIGH.search(line) or _IPV6_NEIGH.search(line)
+        if match and match.group(2).lower() in macs:
+            return {
+                "ip_address": match.group(1),
+                "mac_address": match.group(2).lower(),
+                "arp_state": match.group(3).upper(),
+            }
+    return None
+
+
+def _bridge_master(interface: str) -> str | None:
+    """Return the bridge an interface is enslaved to, or None (routed mode)."""
+    master = Path(f"/sys/class/net/{interface}/master")
     try:
+        return master.resolve().name if master.exists() else None
+    except OSError:
+        return None
+
+
+async def _run(cmd: list[str]) -> str | None:
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode() if proc.returncode == 0 else None
+
+
+async def _get_connected_device_from_fdb(interface: str, bridge: str) -> dict[str, Any] | None:
+    """Switch-mode detection: in a flat L2 bridge (e.g. Cruiser switch mode)
+    neighbour entries live on the bridge, not the member port.  Map the port
+    to its device via the bridge FDB (learned MACs per port), then look the
+    MAC up in the bridge's neighbour table for its IP.
+    """
+    fdb_text = await _run(["bridge", "fdb", "show", "br", bridge])
+    if not fdb_text:
+        return None
+    macs = parse_fdb_macs(fdb_text, interface)
+    if not macs:
+        return None
+
+    neigh_text = await _run(["ip", "neigh", "show", "dev", bridge]) or ""
+    device = parse_neigh_for_macs(neigh_text, macs)
+    if device is None:
+        # No IP (yet) — still report the learned MAC; better than nothing.
+        return {"mac_address": macs[0]}
+
+    hostname = await _resolve_hostname(device["ip_address"])
+    if hostname:
+        device["hostname"] = hostname
+    return device
+
+
+async def get_connected_device_from_arp(interface: str) -> dict[str, Any] | None:
+    """Get connected device information from the ARP/NDP neighbour table.
+
+    Routed mode (per-port subnets): neighbours are attached to the port.
+    Switch mode (port enslaved to a bridge): fall back to FDB + bridge
+    neighbour table.
+    """
+    try:
+        bridge = _bridge_master(interface)
+        if bridge:
+            return await _get_connected_device_from_fdb(interface, bridge)
+
         proc = await asyncio.create_subprocess_exec(
             "ip", "neigh", "show", "dev", interface,
             stdout=asyncio.subprocess.PIPE,
