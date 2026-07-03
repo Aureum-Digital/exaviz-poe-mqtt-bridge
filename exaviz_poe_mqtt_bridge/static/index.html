@@ -46,6 +46,11 @@
     border-radius: 3px 3px 0 0;
   }
   .port .label { font-size: 12px; color: var(--dim); }
+  .port .dev {  /* connected device hostname/IP under the port */
+    font-size: 10px; color: var(--dim); min-height: 13px; max-width: 72px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .port.linked .dev { color: var(--text); }
 
   /* device drawing PoE power: green bolt + watts inside the jack */
   .jack { flex-direction: column; gap: 1px; }
@@ -169,9 +174,14 @@ function renderPorts() {
          </svg></span>
          <span class="jwatts">${fmt(p.power_watts, "W")}</span>`
       : "";
+    const dev = p.connected_device;
+    const devLabel = (linked && dev)
+      ? (dev.hostname ? dev.hostname.split(".")[0] : (dev.ip_address || ""))
+      : "";
     div.innerHTML = `
       <div class="jack">${boltHtml}</div>
-      <span class="label">P${num}</span>`;
+      <span class="label">P${num}</span>
+      <span class="dev" title="${dev?.ip_address ?? ""}">${devLabel}</span>`;
     div.onclick = () => { selected = (selected === id) ? null : id; render(); };
     el.appendChild(div);
   }
