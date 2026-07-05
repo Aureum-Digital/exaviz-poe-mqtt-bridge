@@ -105,6 +105,17 @@
   #toggle.off { background: var(--red); color: #fff; }
   #reset { background: #5ab3f0; }
   #actions button:disabled { opacity: .5; cursor: wait; }
+  #stats {
+    width: 100%; max-width: 860px; margin-top: 18px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 22px; display: grid;
+    grid-template-columns: repeat(4, 1fr); gap: 14px 12px;
+  }
+  .stat .k { font-size: 11px; color: var(--dim); }
+  .stat .v { font-size: 16px; font-weight: 600; margin-top: 2px; }
+  .stat .v small { font-size: 11px; font-weight: 400; color: var(--dim); }
+  @media (max-width: 720px) { #stats { grid-template-columns: repeat(2, 1fr); } }
+
   footer { margin-top: 16px; color: var(--dim); font-size: 11px; }
 </style>
 </head>
@@ -130,6 +141,8 @@
     </div>
   </div>
 </div>
+
+<div id="stats"></div>
 
 <footer id="foot"></footer>
 
@@ -249,6 +262,37 @@ function renderDetail() {
   rst.onclick = () => resetPort(selected);
 }
 
+function fmtUptime(s) {
+  if (s === null || s === undefined) return "—";
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function renderStats() {
+  const ports = Object.values(state.ports);
+  const enabled = ports.filter(p => p.enabled).length;
+  const active = ports.filter(p => (p.power_watts ?? 0) >= 0.5).length;
+  const watts = ports.reduce((s, p) => s + (p.power_watts || 0), 0);
+  const temps = ports.map(p => p.temperature_celsius).filter(t => t > 0);
+  const up = state.uplink;
+
+  const stats = [
+    ["Total ports", `${ports.length}`],
+    ["Enabled", `${enabled}`],
+    ["Active", `${active}`],
+    ["Total power", fmt(watts, "W")],
+    ["WAN IP", up?.ip ? `${up.ip} <small>${up.interface ?? ""}</small>` : "—"],
+    ["PSE temp (max)", temps.length ? fmt(Math.max(...temps), "°C") : "—"],
+    ["MQTT", state.mqtt_connected ? "connected" : "disconnected"],
+    ["Bridge uptime", fmtUptime(state.uptime_seconds)],
+  ];
+  $("stats").innerHTML = stats
+    .map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`)
+    .join("");
+}
+
 function render() {
   if (!state) return;
   $("devname").textContent = state.device.name;
@@ -257,6 +301,7 @@ function render() {
     `exaviz-poe-mqtt-bridge ${state.device.version} · updated ` +
     (state.updated_at ? new Date(state.updated_at * 1000).toLocaleTimeString() : "never");
   renderPorts();
+  renderStats();
   renderDetail();
 }
 

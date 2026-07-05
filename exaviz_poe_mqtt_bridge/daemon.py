@@ -126,6 +126,7 @@ class Daemon:
         # lets the API tell whether a command is confirmed yet.
         self.latest_poll_started_at: float = 0.0
         self.board_type: str = "unknown"
+        self.started_at: float = time.time()
 
     # -- setup ---------------------------------------------------------------
 
@@ -281,6 +282,10 @@ class Daemon:
 
     def _subscribe_commands(self) -> None:
         self._mqtt.subscribe(f"{self._config.mqtt.base_topic}/+/command")
+
+    @property
+    def mqtt_connected(self) -> bool:
+        return self._mqtt.is_connected
 
     def pending_command(self, port_id: str) -> str | None:
         """Return the commanded action ("ON"/"OFF") while it is not yet

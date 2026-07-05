@@ -51,6 +51,11 @@ class MqttBridge:
 
     # -- lifecycle ----------------------------------------------------------
 
+    @property
+    def is_connected(self) -> bool:
+        """Whether the client currently holds a broker connection."""
+        return self._client.is_connected()
+
     def set_on_connect(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked (from the paho thread) on every
         successful (re)connect, after subscriptions are restored."""

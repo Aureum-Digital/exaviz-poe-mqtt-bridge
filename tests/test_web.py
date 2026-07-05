@@ -53,6 +53,10 @@ async def test_status_payload(client):
     assert len(data["ports"]) == 8
     assert "power_watts" in data["ports"]["poe0"]
     assert data["updated_at"] == 1234567890.0
+    # Summary-stats fields
+    assert data["mqtt_connected"] is False  # no broker in tests
+    assert isinstance(data["uptime_seconds"], int)
+    assert "uplink" in data  # None on hosts without iproute2
 
 
 async def test_power_toggle(client):

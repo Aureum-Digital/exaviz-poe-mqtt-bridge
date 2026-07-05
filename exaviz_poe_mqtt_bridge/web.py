@@ -13,6 +13,7 @@ as the MQTT command topics.  Bind it to a trusted interface.
 from __future__ import annotations
 
 import logging
+import time
 from importlib import resources
 from typing import TYPE_CHECKING, Any
 
@@ -20,6 +21,7 @@ from aiohttp import web
 
 from . import __version__
 from .commands import PortValidationError
+from .poe import get_uplink_info
 
 if TYPE_CHECKING:
     from .config import Config
@@ -28,7 +30,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-def _status_payload(daemon: "Daemon", config: "Config") -> dict[str, Any]:
+async def _status_payload(daemon: "Daemon", config: "Config") -> dict[str, Any]:
     # While a command awaits confirmation from a fresh telemetry poll,
     # report the commanded (target) state and flag the port as pending —
     # otherwise the UI would flash the stale pre-command state.
@@ -48,6 +50,9 @@ def _status_payload(daemon: "Daemon", config: "Config") -> dict[str, Any]:
         },
         "poll_interval": config.bridge.poll_interval,
         "updated_at": daemon.latest_updated,
+        "uplink": await get_uplink_info(),
+        "mqtt_connected": daemon.mqtt_connected,
+        "uptime_seconds": round(time.time() - daemon.started_at),
         "ports": ports,
     }
 
@@ -67,7 +72,7 @@ class WebServer:
         return web.Response(text=self._index_html, content_type="text/html")
 
     async def _handle_status(self, request: web.Request) -> web.Response:
-        return web.json_response(_status_payload(self._daemon, self._config))
+        return web.json_response(await _status_payload(self._daemon, self._config))
 
     async def _handle_power(self, request: web.Request) -> web.Response:
         port_id = request.match_info["port_id"]

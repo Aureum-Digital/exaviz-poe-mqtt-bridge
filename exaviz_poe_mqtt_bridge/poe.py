@@ -28,6 +28,7 @@ PORT MAPPING (Cruiser, from upstream):
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -318,11 +319,17 @@ def _bridge_master(interface: str) -> str | None:
 
 
 async def _run(cmd: list[str], ok_codes: tuple[int, ...] = (0,)) -> str | None:
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    """Run a command, returning stdout or None (also when the binary is
+    missing — e.g. arp-scan not installed, or non-Linux dev hosts)."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except (FileNotFoundError, OSError) as ex:
+        _LOGGER.debug("Command %s unavailable: %s", cmd[0], ex)
+        return None
     stdout, _ = await proc.communicate()
     return stdout.decode() if proc.returncode in ok_codes else None
 
@@ -496,6 +503,22 @@ async def get_connected_device_from_arp(interface: str) -> dict[str, Any] | None
 
     except Exception as ex:
         _LOGGER.debug("Failed to get ARP info for %s: %s", interface, ex)
+        return None
+
+
+async def get_uplink_info() -> dict[str, Any] | None:
+    """Interface and source IP of the default route (the WAN-facing address).
+
+    Works in both modes: routed (default via wan) and switch mode
+    (default via br0).  Returns None when there is no default route.
+    """
+    text = await _run(["ip", "-j", "route", "get", "1.1.1.1"])
+    if not text:
+        return None
+    try:
+        route = json.loads(text)[0]
+        return {"interface": route.get("dev"), "ip": route.get("prefsrc")}
+    except (ValueError, IndexError, KeyError, TypeError):
         return None
 
 
