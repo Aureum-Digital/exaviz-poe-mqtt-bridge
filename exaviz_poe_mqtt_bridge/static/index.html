@@ -22,6 +22,7 @@
     width: 100%; max-width: 860px; display: flex; gap: 18px;
     align-items: flex-start; justify-content: center;
   }
+  #left { display: flex; flex-direction: column; gap: 18px; }
   header h1 { font-size: 18px; font-weight: 600; margin: 0; }
   header .meta { color: var(--dim); font-size: 12px; }
   #conn { margin-left: auto; font-size: 12px; display: flex; align-items: center; gap: 6px; }
@@ -106,15 +107,13 @@
   #reset { background: #5ab3f0; }
   #actions button:disabled { opacity: .5; cursor: wait; }
   #stats {
-    width: 100%; max-width: 860px; margin-top: 18px;
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    padding: 16px 22px; display: grid;
-    grid-template-columns: repeat(4, 1fr); gap: 14px 12px;
+    padding: 14px 22px; display: grid;
+    grid-template-columns: repeat(4, 1fr); gap: 12px 10px;
   }
-  .stat .k { font-size: 11px; color: var(--dim); }
-  .stat .v { font-size: 16px; font-weight: 600; margin-top: 2px; }
-  .stat .v small { font-size: 11px; font-weight: 400; color: var(--dim); }
-  @media (max-width: 720px) { #stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat .k { font-size: 10px; color: var(--dim); white-space: nowrap; }
+  .stat .v { font-size: 14px; font-weight: 600; margin-top: 2px; }
+  .stat .v small { display: block; font-size: 10px; font-weight: 400; color: var(--dim); }
 
   footer { margin-top: 16px; color: var(--dim); font-size: 11px; }
 </style>
@@ -127,7 +126,10 @@
 </header>
 
 <div id="main">
-  <div class="switch-body" id="ports"></div>
+  <div id="left">
+    <div class="switch-body" id="ports"></div>
+    <div id="stats"></div>
+  </div>
 
   <div id="detail">
     <h2>
@@ -141,8 +143,6 @@
     </div>
   </div>
 </div>
-
-<div id="stats"></div>
 
 <footer id="foot"></footer>
 
