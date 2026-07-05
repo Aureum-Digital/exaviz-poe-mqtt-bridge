@@ -54,6 +54,8 @@ class BridgeConfig:
     enable_reset_workaround: bool = True
     # Seconds to wait after the ESP32 reset for re-init + PoE detection.
     reset_settle_seconds: float = 8.0
+    # Where UI-edited device labels are persisted (JSON, keyed by MAC).
+    devices_file: str = "/var/lib/exaviz-poe-mqtt-bridge/devices.json"
 
 
 @dataclass

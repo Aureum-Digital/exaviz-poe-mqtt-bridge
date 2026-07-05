@@ -110,12 +110,31 @@ class WebServer:
             )
         return web.json_response({"ok": True, "port": port_id, "reset": True})
 
+    async def _handle_device_label(self, request: web.Request) -> web.Response:
+        """Set/clear a device label: body {"name": "...", "icon": "mdi:..."}.
+        Empty name and icon remove the label."""
+        mac = request.match_info["mac"]
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError
+        except Exception:
+            return web.json_response(
+                {"error": 'body must be {"name": ..., "icon": ...}'}, status=400
+            )
+        try:
+            self._daemon.set_device_label(mac, body.get("name"), body.get("icon"))
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        return web.json_response({"ok": True, "mac": mac.lower()})
+
     async def start(self) -> None:
         app = web.Application()
         app.router.add_get("/", self._handle_index)
         app.router.add_get("/api/status", self._handle_status)
         app.router.add_post("/api/ports/{port_id}/power", self._handle_power)
         app.router.add_post("/api/ports/{port_id}/reset", self._handle_reset)
+        app.router.add_post("/api/devices/{mac}", self._handle_device_label)
 
         self._runner = web.AppRunner(app)
         await self._runner.setup()

@@ -16,6 +16,8 @@ RestartSec=5
 # but lock everything else down.
 NoNewPrivileges=true
 ProtectSystem=full
+# /var/lib/exaviz-poe-mqtt-bridge — persisted device labels
+StateDirectory=exaviz-poe-mqtt-bridge
 ProtectHome=true
 PrivateTmp=true
 ProtectKernelModules=true

@@ -102,6 +102,32 @@
   td { padding: 5px 4px; border-bottom: 1px solid var(--border); }
   td:first-child { color: var(--dim); width: 45%; }
   tr:last-child td { border-bottom: none; }
+  #editbtn {
+    margin-top: 12px; background: none; border: 1px dashed var(--border);
+    color: var(--dim); border-radius: 8px; padding: 6px 12px; font-size: 12px;
+    cursor: pointer; width: 100%;
+  }
+  #editbtn:hover { color: var(--text); border-color: var(--dim); }
+  #editform { display: none; margin-top: 12px; }
+  #editform.show { display: block; }
+  #editform input {
+    width: 100%; box-sizing: border-box; margin-bottom: 8px;
+    background: #23282e; border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 8px 10px; font-size: 13px;
+  }
+  #editform .iconrow { display: flex; gap: 10px; align-items: center; }
+  #editform .iconrow input { flex: 1; margin-bottom: 0; }
+  #e-preview { font-size: 22px; color: var(--green); min-width: 26px; text-align: center; }
+  .formhint { font-size: 10px; color: var(--dim); margin: 6px 0 8px; }
+  .formhint a { color: var(--dim); }
+  .formrow { display: flex; gap: 10px; }
+  .formrow button {
+    flex: 1; padding: 7px 12px; border-radius: 8px; border: none;
+    font-size: 13px; font-weight: 600; cursor: pointer; color: #14171a;
+  }
+  #e-save { background: var(--green); }
+  #e-cancel { background: #aab2ba; }
+
   #actions { display: flex; gap: 10px; margin-top: 14px; }
   #actions button {
     flex: 1; padding: 9px 12px; border-radius: 8px; border: none;
@@ -142,6 +168,21 @@
       <span class="state-chip" id="d-state"></span>
     </h2>
     <table id="d-table"></table>
+
+    <button id="editbtn">✎ Edit device label</button>
+    <div id="editform">
+      <input id="e-name" placeholder="Name (e.g. Entrance camera)" maxlength="48">
+      <div class="iconrow">
+        <input id="e-icon" placeholder="mdi:cctv" maxlength="48">
+        <span id="e-preview" class="mdi"></span>
+      </div>
+      <div class="formhint">Icon ids: <a href="https://pictogrammers.com/library/mdi/" target="_blank">pictogrammers.com/library/mdi</a> · leave both empty to remove</div>
+      <div class="formrow">
+        <button id="e-save">Save</button>
+        <button id="e-cancel">Cancel</button>
+      </div>
+    </div>
+
     <div id="actions">
       <button id="toggle"></button>
       <button id="reset">Reset Port</button>
@@ -156,6 +197,7 @@
 let state = null;          // last /api/status payload
 let selected = null;       // selected port_id
 let busy = new Set();      // ports with in-flight commands
+let editing = false;       // device-label edit form open
 
 const $ = id => document.getElementById(id);
 const fmt = (v, unit, dp=1) => (v === null || v === undefined) ? "—" : `${Number(v).toFixed(dp)} ${unit}`;
@@ -215,7 +257,7 @@ function renderPorts() {
       <div class="jack">${jackContent}</div>
       <span class="label">P${num}</span>
       <span class="dev" title="${dev?.ip_address ?? ""}">${devLabel}</span>`;
-    div.onclick = () => { selected = (selected === id) ? null : id; render(); };
+    div.onclick = () => { selected = (selected === id) ? null : id; editing = false; render(); };
     el.appendChild(div);
   }
 }
@@ -280,6 +322,12 @@ function renderDetail() {
   rst.disabled = working || !p.enabled;
   rst.textContent = working ? "Working…" : "Reset Port";
   rst.onclick = () => resetPort(selected);
+
+  // Device label editing — only when we know the device's MAC. The
+  // label is keyed by MAC, so it follows the device across ports.
+  const hasMac = Boolean(dev?.mac_address);
+  $("editbtn").style.display = hasMac && !editing ? "" : "none";
+  $("editform").className = hasMac && editing ? "show" : "";
 }
 
 function fmtUptime(s) {
@@ -345,6 +393,48 @@ async function togglePort(id, on) {
     await refresh();
   }
 }
+
+function openEdit() {
+  const dev = state.ports[selected]?.connected_device;
+  if (!dev?.mac_address) return;
+  $("e-name").value = dev.custom_name ?? "";
+  $("e-icon").value = dev.icon ?? "";
+  updateIconPreview();
+  editing = true;
+  render();
+  $("e-name").focus();
+}
+
+function updateIconPreview() {
+  const icon = $("e-icon").value.trim();
+  $("e-preview").className =
+    /^mdi:[a-z0-9-]+$/.test(icon) ? `mdi ${icon.replace("mdi:", "mdi-")}` : "mdi";
+}
+
+async function saveLabel() {
+  const mac = state.ports[selected]?.connected_device?.mac_address;
+  if (!mac) return;
+  try {
+    const r = await fetch(`/api/devices/${mac}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: $("e-name").value.trim(),
+        icon: $("e-icon").value.trim(),
+      }),
+    });
+    if (!r.ok) { alert((await r.json()).error ?? `HTTP ${r.status}`); return; }
+    editing = false;
+    await refresh();
+  } catch (e) {
+    alert(`Request failed: ${e}`);
+  }
+}
+
+$("editbtn").onclick = openEdit;
+$("e-cancel").onclick = () => { editing = false; render(); };
+$("e-save").onclick = saveLabel;
+$("e-icon").oninput = updateIconPreview;
 
 async function resetPort(id) {
   const num = parseInt(id.replace("poe", "")) + 1;

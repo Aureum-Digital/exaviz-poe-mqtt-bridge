@@ -29,6 +29,7 @@ async def client():
     app.router.add_get("/api/status", server._handle_status)
     app.router.add_post("/api/ports/{port_id}/power", server._handle_power)
     app.router.add_post("/api/ports/{port_id}/reset", server._handle_reset)
+    app.router.add_post("/api/devices/{mac}", server._handle_device_label)
 
     test_client = TestClient(TestServer(app))
     await test_client.start_server()
@@ -132,6 +133,31 @@ def test_mac_vendor_lookup():
     assert get_mac_vendor("d0:3b:f4:03:a6:f1") == "Unknown"
     assert get_mac_vendor(None) == "Unknown"
     assert get_mac_vendor("garbage") == "Unknown"
+
+
+async def test_device_label_endpoint(client, tmp_path):
+    c, daemon = client
+    daemon._devices_file = tmp_path / "devices.json"
+
+    resp = await c.post("/api/devices/00:13:E2:1F:BC:B9",
+                        json={"name": "Camara jardin", "icon": "mdi:cctv"})
+    assert resp.status == 200
+    assert (await resp.json())["mac"] == "00:13:e2:1f:bc:b9"
+    data = await daemon._read_ports()
+    assert data["poe0"]["connected_device"]["custom_name"] == "Camara jardin"
+
+
+async def test_device_label_invalid_rejected(client, tmp_path):
+    c, daemon = client
+    daemon._devices_file = tmp_path / "devices.json"
+
+    resp = await c.post("/api/devices/nonsense", json={"name": "X"})
+    assert resp.status == 400
+    resp = await c.post("/api/devices/00:13:e2:1f:bc:b9",
+                        json={"icon": "javascript:alert(1)"})
+    assert resp.status == 400
+    resp = await c.post("/api/devices/00:13:e2:1f:bc:b9", json="not-a-dict")
+    assert resp.status == 400
 
 
 async def test_power_bad_body_400(client):

@@ -16,9 +16,19 @@ import sys
 import time
 from typing import Any
 
+from pathlib import Path
+
 from . import __version__
 from .commands import PoEController, PortValidationError, validate_port_id
-from .config import Config, ConfigError, DEFAULT_CONFIG_PATH, load_config
+from .config import (
+    _ICON_RE,
+    _MAC_RE,
+    Config,
+    ConfigError,
+    DEFAULT_CONFIG_PATH,
+    DeviceLabel,
+    load_config,
+)
 from .discovery import build_all_discovery, port_topics
 from .mqtt import MqttBridge
 from .poe import (
@@ -127,6 +137,76 @@ class Daemon:
         self.latest_poll_started_at: float = 0.0
         self.board_type: str = "unknown"
         self.started_at: float = time.time()
+        # Device labels: config `devices:` as seed, UI-edited entries
+        # persisted to (and re-loaded from) bridge.devices_file, keyed by
+        # MAC so a label follows its device across ports.
+        self.device_labels: dict[str, DeviceLabel] = dict(config.devices)
+        self._devices_file = Path(config.bridge.devices_file)
+        self._load_device_labels()
+
+    # -- device labels ---------------------------------------------------------
+
+    def _load_device_labels(self) -> None:
+        """Merge persisted (UI-edited) labels over the config seed."""
+        try:
+            data = json.loads(self._devices_file.read_text())
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError) as exc:
+            _LOGGER.warning("Could not read %s: %s", self._devices_file, exc)
+            return
+        for mac, spec in data.items():
+            if isinstance(spec, dict) and _MAC_RE.match(str(mac).lower()):
+                self.device_labels[str(mac).lower()] = DeviceLabel(
+                    name=spec.get("name") or None,
+                    icon=spec.get("icon") or None,
+                )
+        _LOGGER.info("Loaded %d device labels from %s", len(data), self._devices_file)
+
+    def _save_device_labels(self) -> None:
+        try:
+            self._devices_file.parent.mkdir(parents=True, exist_ok=True)
+            self._devices_file.write_text(json.dumps(
+                {mac: {"name": lbl.name, "icon": lbl.icon}
+                 for mac, lbl in self.device_labels.items()},
+                indent=2,
+            ))
+        except OSError as exc:
+            _LOGGER.warning(
+                "Could not persist device labels to %s: %s (kept in memory)",
+                self._devices_file, exc,
+            )
+
+    def set_device_label(self, mac: str, name: str | None, icon: str | None) -> None:
+        """Create/update/remove a device label (empty name+icon removes).
+
+        Raises ValueError on malformed MAC or icon id.
+        """
+        mac = mac.strip().lower()
+        if not _MAC_RE.match(mac):
+            raise ValueError(f"Malformed MAC address: {mac!r}")
+        name = (name or "").strip() or None
+        icon = (icon or "").strip() or None
+        if icon and not _ICON_RE.match(icon):
+            raise ValueError(f"Invalid icon id: {icon!r} (expected e.g. mdi:cctv)")
+
+        if name is None and icon is None:
+            self.device_labels.pop(mac, None)
+        else:
+            self.device_labels[mac] = DeviceLabel(name=name, icon=icon)
+        self._save_device_labels()
+
+        # Apply to the current snapshot so the UI reflects it right away
+        for status in self.latest_status.values():
+            device = status.get("connected_device")
+            if device and device.get("mac_address", "").lower() == mac:
+                for key, value in (("custom_name", name), ("icon", icon)):
+                    if value is None:
+                        device.pop(key, None)
+                    else:
+                        device[key] = value
+        self._refresh_event.set()
+        _LOGGER.info("Device label for %s: name=%r icon=%r", mac, name, icon)
 
     # -- setup ---------------------------------------------------------------
 
@@ -189,12 +269,12 @@ class Daemon:
                 serial_read_seconds=self._config.bridge.serial_read_seconds,
             )
 
-        # Apply user-defined labels/icons (config `devices:`, keyed by MAC)
-        if self._config.devices:
+        # Apply user-defined labels/icons (config seed + UI edits, by MAC)
+        if self.device_labels:
             for status in data.values():
                 device = status.get("connected_device")
                 mac = (device or {}).get("mac_address")
-                label = self._config.devices.get(mac.lower()) if mac else None
+                label = self.device_labels.get(mac.lower()) if mac else None
                 if label:
                     if label.name:
                         device["custom_name"] = label.name
