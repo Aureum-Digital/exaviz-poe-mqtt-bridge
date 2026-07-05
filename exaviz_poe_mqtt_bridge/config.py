@@ -6,6 +6,7 @@ The bridge is configured from a single YAML file, by default
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -69,12 +70,50 @@ class WebConfig:
 
 
 @dataclass
+class DeviceLabel:
+    """User-defined label/icon for a device, keyed by MAC address."""
+
+    name: str | None = None
+    icon: str | None = None  # Material Design Icons id, e.g. "mdi:cctv"
+
+
+@dataclass
 class Config:
     """Top-level bridge configuration."""
 
     mqtt: MqttConfig
     bridge: BridgeConfig = field(default_factory=BridgeConfig)
     web: WebConfig = field(default_factory=WebConfig)
+    devices: dict[str, DeviceLabel] = field(default_factory=dict)
+
+
+_MAC_RE = re.compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
+_ICON_RE = re.compile(r"^mdi:[a-z0-9][a-z0-9-]*$")
+
+
+def _parse_devices(section: dict[str, Any]) -> dict[str, DeviceLabel]:
+    """Parse the optional `devices:` section (MAC → name/icon overrides)."""
+    devices: dict[str, DeviceLabel] = {}
+    for mac, spec in section.items():
+        key = str(mac).strip().lower()
+        if not _MAC_RE.match(key):
+            _LOGGER.warning("devices: ignoring invalid MAC %r", mac)
+            continue
+        if not isinstance(spec, dict):
+            _LOGGER.warning("devices[%s]: expected a mapping with name/icon", key)
+            continue
+        name = spec.get("name")
+        icon = spec.get("icon")
+        if icon is not None and not _ICON_RE.match(str(icon)):
+            _LOGGER.warning(
+                "devices[%s]: invalid icon %r (expected e.g. mdi:cctv)", key, icon
+            )
+            icon = None
+        devices[key] = DeviceLabel(
+            name=str(name) if name is not None else None,
+            icon=str(icon) if icon is not None else None,
+        )
+    return devices
 
 
 def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -116,10 +155,11 @@ def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> Config:
     mqtt = _build(MqttConfig, mqtt_section, "mqtt")
     bridge = _build(BridgeConfig, _section(data, "bridge"), "bridge")
     web = _build(WebConfig, _section(data, "web"), "web")
+    devices = _parse_devices(_section(data, "devices"))
 
     if bridge.poll_interval <= 0:
         raise ConfigError("bridge.poll_interval must be > 0")
     if not 1 <= web.port <= 65535:
         raise ConfigError("web.port must be a valid TCP port")
 
-    return Config(mqtt=mqtt, bridge=bridge, web=web)
+    return Config(mqtt=mqtt, bridge=bridge, web=web, devices=devices)

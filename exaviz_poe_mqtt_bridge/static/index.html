@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Exaviz PoE</title>
+<!-- MDI icon font for user-configured device icons (config `devices:`).
+     Loaded from CDN; degrades gracefully offline (icons simply absent). -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
 <style>
   :root {
     --bg: #14171a; --panel: #1d2126; --border: #2c3238;
@@ -60,6 +63,8 @@
     filter: drop-shadow(0 0 3px var(--green-glow));
   }
   .jwatts { font-size: 9px; font-weight: 600; color: var(--green); line-height: 1; }
+  .devicon { font-size: 20px; line-height: 1; color: var(--dim); }
+  .port.linked .devicon { color: var(--green); }
   .port.off .jack { opacity: .8; border-color: #454e57; }
   .port.off .jack::after { border-color: #454e57; }
   .port.off .jack::before {  /* ✕ in the border colour: PoE disabled */
@@ -186,18 +191,28 @@ function renderPorts() {
       + (linked && !p.pending ? " linked" : "")
       + (id === selected ? " selected" : "")
       + (working ? " busy" : "");
-    const boltHtml = powered && !p.pending
-      ? `<span class="bolt"><svg viewBox="0 0 24 24" width="15" height="15">
-           <path fill="currentColor" d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
-         </svg></span>
-         <span class="jwatts">${fmt(p.power_watts, "W")}</span>`
-      : "";
     const dev = p.connected_device;
+    const watts = powered && !p.pending
+      ? `<span class="jwatts">${fmt(p.power_watts, "W")}</span>` : "";
+
+    // Jack content: user-configured MDI icon when available, else the
+    // bolt for anonymous PoE loads. Nothing while disabled/pending
+    // (the ✕ / blink take over).
+    let jackContent = "";
+    if (p.enabled && !p.pending && dev?.icon && linked) {
+      jackContent = `<span class="devicon mdi ${dev.icon.replace("mdi:", "mdi-")}"></span>${watts}`;
+    } else if (powered && !p.pending) {
+      jackContent = `<span class="bolt"><svg viewBox="0 0 24 24" width="15" height="15">
+           <path fill="currentColor" d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
+         </svg></span>${watts}`;
+    }
+
     const devLabel = (linked && dev)
-      ? (dev.hostname ? dev.hostname.split(".")[0] : (dev.ip_address || ""))
+      ? (dev.custom_name
+          || (dev.hostname ? dev.hostname.split(".")[0] : (dev.ip_address || "")))
       : "";
     div.innerHTML = `
-      <div class="jack">${boltHtml}</div>
+      <div class="jack">${jackContent}</div>
       <span class="label">P${num}</span>
       <span class="dev" title="${dev?.ip_address ?? ""}">${devLabel}</span>`;
     div.onclick = () => { selected = (selected === id) ? null : id; render(); };
@@ -240,6 +255,11 @@ function renderDetail() {
     ["Speed", p.speed_mbps ? `${p.speed_mbps} Mbps` : "—"],
     ["Traffic RX / TX", `${fmtBytes(p.rx_bytes)} / ${fmtBytes(p.tx_bytes)}`],
   ];
+  if (dev?.custom_name) {
+    const icon = dev.icon
+      ? `<span class="mdi ${dev.icon.replace("mdi:", "mdi-")}"></span> ` : "";
+    rows.push(["Device", `${icon}${dev.custom_name}`]);
+  }
   if (dev?.manufacturer) rows.push(["Manufacturer", dev.manufacturer]);
   if (dev?.hostname) rows.push(["Hostname", dev.hostname]);
   rows.push(["IP address", dev?.ip_address ?? "—"]);

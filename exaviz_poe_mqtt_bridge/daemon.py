@@ -181,12 +181,26 @@ class Daemon:
 
     async def _read_ports(self) -> dict[str, dict[str, Any]]:
         if self._simulator:
-            return await self._simulator.read_all()
-        return await read_all_onboard_ports(
-            self._port_ids,
-            pse_device=self._config.bridge.pse_device,
-            serial_read_seconds=self._config.bridge.serial_read_seconds,
-        )
+            data = await self._simulator.read_all()
+        else:
+            data = await read_all_onboard_ports(
+                self._port_ids,
+                pse_device=self._config.bridge.pse_device,
+                serial_read_seconds=self._config.bridge.serial_read_seconds,
+            )
+
+        # Apply user-defined labels/icons (config `devices:`, keyed by MAC)
+        if self._config.devices:
+            for status in data.values():
+                device = status.get("connected_device")
+                mac = (device or {}).get("mac_address")
+                label = self._config.devices.get(mac.lower()) if mac else None
+                if label:
+                    if label.name:
+                        device["custom_name"] = label.name
+                    if label.icon:
+                        device["icon"] = label.icon
+        return data
 
     def _publish_port(
         self, port_id: str, status: dict[str, Any], poll_started_at: float
@@ -225,7 +239,8 @@ class Daemon:
 
         device = status.get("connected_device")
         if device:
-            summary = device.get("hostname") or device.get("ip_address") or device.get("mac_address")
+            summary = (device.get("custom_name") or device.get("hostname")
+                       or device.get("ip_address") or device.get("mac_address"))
         else:
             summary = "none"
         self._mqtt.publish(topics["device"], summary, retain=True)

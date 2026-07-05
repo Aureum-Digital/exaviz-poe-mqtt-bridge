@@ -27,3 +27,14 @@ web:
   enabled: false             # embedded web UI (no auth — trusted networks only)
   host: 0.0.0.0
   port: 8088
+
+# Optional: friendly name + Material Design icon per device MAC. Shown in
+# the web UI (icon inside the port, name under it) and as the HA
+# connected-device sensor value. Icon ids: https://pictogrammers.com/library/mdi/
+# devices:
+#   "d0:3b:f4:03:a6:f1":
+#     name: Camara entrada
+#     icon: mdi:cctv
+#   "5c:53:10:c2:76:d2":
+#     name: NAS taller
+#     icon: mdi:nas

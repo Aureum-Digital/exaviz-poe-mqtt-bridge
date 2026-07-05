@@ -126,6 +126,21 @@ GET  /api/status                  # device info + latest port telemetry
 POST /api/ports/poe0/power        # body: {"on": true}
 ```
 
+Devices that don't announce a hostname (no PTR/mDNS) can be given a
+friendly name and a [Material Design icon](https://pictogrammers.com/library/mdi/),
+keyed by MAC:
+
+```yaml
+devices:
+  "d0:3b:f4:03:a6:f1":
+    name: Entrance camera
+    icon: mdi:cctv
+```
+
+The icon is shown inside the port, the name under it (and as the HA
+connected-device sensor value). Icons use the MDI webfont from a CDN and
+degrade gracefully when the browser has no internet access.
+
 ⚠️ The web UI has **no authentication** — it exposes the same control
 surface as the MQTT command topics. Keep it disabled or bind it to a
 trusted interface/network.

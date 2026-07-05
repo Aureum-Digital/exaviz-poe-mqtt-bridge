@@ -62,6 +62,22 @@ async def test_fresh_poll_after_command_publishes_state(daemon):
     assert "exaviz/cruiser/poe/poe0/state" in topics
 
 
+async def test_device_labels_applied(daemon):
+    """MAC-keyed labels from config `devices:` enrich connected devices."""
+    from exaviz_poe_mqtt_bridge.config import DeviceLabel
+
+    # Simulator's poe0 device MAC (case-insensitive match)
+    daemon._config.devices = {
+        "00:13:e2:1f:bc:b9": DeviceLabel(name="Camara jardin", icon="mdi:cctv"),
+    }
+    data = await daemon._read_ports()
+    device = data["poe0"]["connected_device"]
+    assert device["custom_name"] == "Camara jardin"
+    assert device["icon"] == "mdi:cctv"
+    # Unmapped devices untouched
+    assert "custom_name" not in (data["poe3"]["connected_device"] or {})
+
+
 async def test_stale_guard_is_per_port(daemon):
     poll_started = time.monotonic()
     daemon._last_command["poe0"] = (poll_started + 1, "ON")
