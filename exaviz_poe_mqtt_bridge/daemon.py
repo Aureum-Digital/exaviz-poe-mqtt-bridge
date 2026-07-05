@@ -55,6 +55,13 @@ class SimulatedPoE:
                      "hostname": "laptop-taller", "arp_state": "REACHABLE"},
         }
         self._non_poe = {"poe5"}
+        # Same OUI enrichment as the real detection paths
+        from .vendor_db import get_mac_vendor
+
+        for device in self._devices.values():
+            vendor = get_mac_vendor(device["mac_address"])
+            if vendor != "Unknown":
+                device["manufacturer"] = vendor
 
     def set_enabled(self, port_id: str, enabled: bool) -> None:
         self._enabled[port_id] = enabled
@@ -282,6 +289,18 @@ class Daemon:
         if ts > self.latest_poll_started_at:
             return action
         return None
+
+    async def apply_reset(self, port_id: str) -> bool:
+        """Power-cycle a port (ESP32 reset-port).  Raises
+        PortValidationError for unknown ports."""
+        port_num = validate_port_id(port_id, self._port_ids)
+        _LOGGER.info("Reset (power cycle) for %s", port_id)
+        try:
+            if self._simulator:
+                return True
+            return await self._controller.reset_port(port_num)
+        finally:
+            self._refresh_event.set()
 
     async def apply_command(self, port_id: str, action: str) -> bool:
         """Validate and execute an ON/OFF port command.

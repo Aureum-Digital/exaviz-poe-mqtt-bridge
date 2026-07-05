@@ -59,11 +59,11 @@ def validate_port_id(port_id: str, known_ports: list[str] | set[str]) -> int:
 def build_port_command(action: str, linux_port: int) -> str:
     """Build a validated ESP32 command string for a Linux poe port number.
 
-    Only "enable-port" and "disable-port" are allowed; the pse/port
-    arguments are always integers derived from the validated port number,
-    so no external input ever reaches the command string.
+    Only "enable-port", "disable-port" and "reset-port" are allowed; the
+    pse/port arguments are always integers derived from the validated
+    port number, so no external input ever reaches the command string.
     """
-    if action not in ("enable-port", "disable-port"):
+    if action not in ("enable-port", "disable-port", "reset-port"):
         raise ValueError(f"Unsupported ESP32 action: {action!r}")
     if not 0 <= linux_port <= 15:
         raise ValueError(f"Port number out of range: {linux_port}")
@@ -177,4 +177,17 @@ class PoEController:
             ok = await self._run_ip_link(interface, "down") and ok
             if ok:
                 _LOGGER.info("Disabled PoE port %s (power cut + link down)", interface)
+            return ok
+
+    async def reset_port(self, linux_port: int) -> bool:
+        """Power-cycle a PoE port via the ESP32 'reset-port' command.
+
+        The TPS23861 drops power and re-runs detection/classification —
+        the connected device reboots.  Admin/link state is untouched
+        (same as upstream ha-poe-plugin's reset button).
+        """
+        async with self._lock:
+            ok = await self._write_pse_command(build_port_command("reset-port", linux_port))
+            if ok:
+                _LOGGER.info("Reset PoE port poe%d (power cycle)", linux_port)
             return ok

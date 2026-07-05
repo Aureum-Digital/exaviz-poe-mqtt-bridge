@@ -92,11 +92,24 @@ class WebServer:
             )
         return web.json_response({"ok": True, "port": port_id, "on": on})
 
+    async def _handle_reset(self, request: web.Request) -> web.Response:
+        port_id = request.match_info["port_id"]
+        try:
+            ok = await self._daemon.apply_reset(port_id)
+        except PortValidationError as exc:
+            return web.json_response({"error": str(exc)}, status=404)
+        if not ok:
+            return web.json_response(
+                {"error": "reset failed, check daemon logs"}, status=502
+            )
+        return web.json_response({"ok": True, "port": port_id, "reset": True})
+
     async def start(self) -> None:
         app = web.Application()
         app.router.add_get("/", self._handle_index)
         app.router.add_get("/api/status", self._handle_status)
         app.router.add_post("/api/ports/{port_id}/power", self._handle_power)
+        app.router.add_post("/api/ports/{port_id}/reset", self._handle_reset)
 
         self._runner = web.AppRunner(app)
         await self._runner.setup()

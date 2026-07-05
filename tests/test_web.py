@@ -28,6 +28,7 @@ async def client():
     app.router.add_get("/", server._handle_index)
     app.router.add_get("/api/status", server._handle_status)
     app.router.add_post("/api/ports/{port_id}/power", server._handle_power)
+    app.router.add_post("/api/ports/{port_id}/reset", server._handle_reset)
 
     test_client = TestClient(TestServer(app))
     await test_client.start_server()
@@ -102,6 +103,30 @@ async def test_pending_clears_after_fresh_poll(client):
 
     data = await (await c.get("/api/status")).json()
     assert "pending" not in data["ports"]["poe1"]
+
+
+async def test_reset_port(client):
+    c, _ = client
+    resp = await c.post("/api/ports/poe1/reset")
+    assert resp.status == 200
+    assert (await resp.json())["reset"] is True
+
+
+async def test_reset_unknown_port_404(client):
+    c, _ = client
+    resp = await c.post("/api/ports/poe9/reset")
+    assert resp.status == 404
+
+
+def test_mac_vendor_lookup():
+    from exaviz_poe_mqtt_bridge.vendor_db import get_mac_vendor
+
+    assert get_mac_vendor("00:07:5f:90:c5:16") == "VCS Video Communication Systems (Camera)"
+    assert get_mac_vendor("00:13:e2:1f:bc:b9") == "GeoVision (Camera)"
+    assert get_mac_vendor("00:50:56:aa:bb:cc") == "VMware Virtual"  # upstream dup resolved
+    assert get_mac_vendor("d0:3b:f4:03:a6:f1") == "Unknown"
+    assert get_mac_vendor(None) == "Unknown"
+    assert get_mac_vendor("garbage") == "Unknown"
 
 
 async def test_power_bad_body_400(client):

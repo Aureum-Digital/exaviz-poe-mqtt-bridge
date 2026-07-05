@@ -35,6 +35,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from .vendor_db import get_mac_vendor
+
 _LOGGER = logging.getLogger(__name__)
 
 # PoE Class Power Allocations (IEEE 802.3) — from upstream const.py
@@ -398,6 +400,14 @@ async def _discover_ip_by_capture(interface: str, mac: str) -> str | None:
     return parse_capture_src_ip(text) if text else None
 
 
+def _with_manufacturer(device: dict[str, Any]) -> dict[str, Any]:
+    """Add the OUI-derived manufacturer to a connected-device dict."""
+    vendor = get_mac_vendor(device.get("mac_address"))
+    if vendor != "Unknown":
+        device["manufacturer"] = vendor
+    return device
+
+
 async def _get_connected_device_from_fdb(interface: str, bridge: str) -> dict[str, Any] | None:
     """Switch-mode detection: in a flat L2 bridge (e.g. Cruiser switch mode)
     neighbour entries live on the bridge, not the member port.  Map the port
@@ -430,13 +440,13 @@ async def _get_connected_device_from_fdb(interface: str, bridge: str) -> dict[st
             ip = await _discover_ip_by_capture(interface, macs[0])
             if ip is None:
                 # No trace of an address — report the learned MAC alone.
-                return {"mac_address": macs[0]}
+                return _with_manufacturer({"mac_address": macs[0]})
             device = {"ip_address": ip, "mac_address": macs[0], "arp_state": "CAPTURED"}
 
     hostname = await _resolve_hostname(device["ip_address"])
     if hostname:
         device["hostname"] = hostname
-    return device
+    return _with_manufacturer(device)
 
 
 async def get_connected_device_from_arp(interface: str) -> dict[str, Any] | None:
@@ -482,7 +492,7 @@ async def get_connected_device_from_arp(interface: str) -> dict[str, Any] | None
         hostname = await _resolve_hostname(ip_address)
         if hostname:
             device["hostname"] = hostname
-        return device
+        return _with_manufacturer(device)
 
     except Exception as ex:
         _LOGGER.debug("Failed to get ARP info for %s: %s", interface, ex)

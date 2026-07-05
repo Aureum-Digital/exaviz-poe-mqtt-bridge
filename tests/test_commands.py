@@ -60,11 +60,15 @@ class TestBuildPortCommand:
         assert build_port_command("disable-port", 3) == "disable-port 1 3"
         assert build_port_command("disable-port", 4) == "disable-port 0 0"
 
+    def test_reset_command_format(self):
+        assert build_port_command("reset-port", 0) == "reset-port 1 0"
+        assert build_port_command("reset-port", 6) == "reset-port 0 2"
+
     def test_unknown_action_rejected(self):
         with pytest.raises(ValueError):
             build_port_command("reset; rm -rf /", 0)
         with pytest.raises(ValueError):
-            build_port_command("reset-port", 0)  # not exposed via MQTT
+            build_port_command("reset", 0)  # full ESP32 reboot not exposed
 
     def test_out_of_range_port_rejected(self):
         with pytest.raises(ValueError):
