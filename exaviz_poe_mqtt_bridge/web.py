@@ -21,7 +21,7 @@ from aiohttp import web
 
 from . import __version__
 from .commands import PortValidationError
-from .poe import get_uplink_info
+from .poe import get_uplink_info, get_wifi_info
 
 if TYPE_CHECKING:
     from .config import Config
@@ -51,6 +51,7 @@ async def _status_payload(daemon: "Daemon", config: "Config") -> dict[str, Any]:
         "poll_interval": config.bridge.poll_interval,
         "updated_at": daemon.latest_updated,
         "uplink": await get_uplink_info(),
+        "wifi": await get_wifi_info(),
         "mqtt_connected": daemon.mqtt_connected,
         "uptime_seconds": round(time.time() - daemon.started_at),
         "ports": ports,

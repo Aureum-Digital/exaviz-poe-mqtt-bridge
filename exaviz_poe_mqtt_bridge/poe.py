@@ -522,6 +522,33 @@ async def get_uplink_info() -> dict[str, Any] | None:
         return None
 
 
+async def get_wifi_info() -> dict[str, Any] | None:
+    """Interface and IPv4 of the first wireless interface, if any.
+
+    On the Cruiser this is the wlan0 management/backup link — useful to
+    show alongside the WAN IP so both paths are visible at a glance.
+    """
+    try:
+        candidates = sorted(Path("/sys/class/net").iterdir())
+    except OSError:
+        return None
+
+    for iface in candidates:
+        if not (iface / "wireless").exists():
+            continue
+        text = await _run(["ip", "-j", "addr", "show", "dev", iface.name])
+        if text:
+            try:
+                for entry in json.loads(text):
+                    for addr in entry.get("addr_info", []):
+                        if addr.get("family") == "inet":
+                            return {"interface": iface.name, "ip": addr.get("local")}
+            except (ValueError, TypeError):
+                pass
+        return {"interface": iface.name, "ip": None}
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Per-port status assembly — from upstream read_network_port_status()
 # ---------------------------------------------------------------------------

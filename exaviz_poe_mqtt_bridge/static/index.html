@@ -277,14 +277,15 @@ function renderStats() {
   const watts = ports.reduce((s, p) => s + (p.power_watts || 0), 0);
   const temps = ports.map(p => p.temperature_celsius).filter(t => t > 0);
   const up = state.uplink;
+  const wifi = state.wifi;
 
   const stats = [
-    ["Total ports", `${ports.length}`],
-    ["Enabled", `${enabled}`],
+    ["Enabled", `${enabled} / ${ports.length}`],
     ["Active", `${active}`],
     ["Total power", fmt(watts, "W")],
-    ["WAN IP", up?.ip ? `${up.ip} <small>${up.interface ?? ""}</small>` : "—"],
     ["PSE temp (max)", temps.length ? fmt(Math.max(...temps), "°C") : "—"],
+    ["WAN IP", up?.ip ? `${up.ip} <small>${up.interface ?? ""}</small>` : "—"],
+    ["WiFi IP", wifi?.ip ? `${wifi.ip} <small>${wifi.interface ?? ""}</small>` : "—"],
     ["MQTT", state.mqtt_connected ? "connected" : "disconnected"],
     ["Bridge uptime", fmtUptime(state.uptime_seconds)],
   ];

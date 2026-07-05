@@ -57,6 +57,7 @@ async def test_status_payload(client):
     assert data["mqtt_connected"] is False  # no broker in tests
     assert isinstance(data["uptime_seconds"], int)
     assert "uplink" in data  # None on hosts without iproute2
+    assert "wifi" in data  # None on hosts without /sys/class/net
 
 
 async def test_power_toggle(client):
