@@ -65,6 +65,12 @@
   .jwatts { font-size: 9px; font-weight: 600; color: var(--green); line-height: 1; }
   .devicon { font-size: 20px; line-height: 1; color: var(--dim); }
   .port.linked .devicon { color: var(--green); }
+  .boltbadge {  /* PoE-drawing badge when a device icon occupies the jack */
+    position: absolute; top: -8px; left: -8px; line-height: 0;
+    color: var(--green); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 50%; padding: 3px;
+    filter: drop-shadow(0 0 3px var(--green-glow));
+  }
   .port.off .jack { opacity: .8; border-color: #454e57; }
   .port.off .jack::after { border-color: #454e57; }
   .port.off .jack::before {  /* ✕ in the border colour: PoE disabled */
@@ -118,6 +124,19 @@
   #editform .iconrow { display: flex; gap: 10px; align-items: center; }
   #editform .iconrow input { flex: 1; margin-bottom: 0; }
   #e-preview { font-size: 22px; color: var(--green); min-width: 26px; text-align: center; }
+  #iconpicker {
+    margin-top: 8px; max-height: 132px; overflow-y: auto;
+    background: #23282e; border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px; display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 2px;
+  }
+  #iconpicker .pick {
+    font-size: 18px; color: var(--text); background: none; border: none;
+    border-radius: 6px; padding: 5px 0; cursor: pointer; line-height: 1;
+  }
+  #iconpicker .pick:hover { background: #2c3238; color: var(--green); }
+  #iconpicker .pick.sel { color: var(--green); background: #2c3238; }
+  #iconpicker .empty { grid-column: 1 / -1; color: var(--dim); font-size: 11px; padding: 6px; }
   .formhint { font-size: 10px; color: var(--dim); margin: 6px 0 8px; }
   .formhint a { color: var(--dim); }
   .formrow { display: flex; gap: 10px; }
@@ -173,10 +192,13 @@
     <div id="editform">
       <input id="e-name" placeholder="Name (e.g. Entrance camera)" maxlength="48">
       <div class="iconrow">
-        <input id="e-icon" placeholder="mdi:cctv" maxlength="48">
+        <input id="e-icon" placeholder="mdi:cctv — or type to search icons" maxlength="48">
         <span id="e-preview" class="mdi"></span>
       </div>
-      <div class="formhint">Icon ids: <a href="https://pictogrammers.com/library/mdi/" target="_blank">pictogrammers.com/library/mdi</a> · leave both empty to remove</div>
+      <div id="iconpicker"></div>
+      <div class="formhint">Click an icon or type to search the full
+        <a href="https://pictogrammers.com/library/mdi/" target="_blank">MDI catalog</a>
+        · leave both fields empty to remove</div>
       <div class="formrow">
         <button id="e-save">Save</button>
         <button id="e-cancel">Cancel</button>
@@ -242,7 +264,12 @@ function renderPorts() {
     // (the ✕ / blink take over).
     let jackContent = "";
     if (p.enabled && !p.pending && dev?.icon && linked) {
-      jackContent = `<span class="devicon mdi ${dev.icon.replace("mdi:", "mdi-")}"></span>${watts}`;
+      const badge = powered
+        ? `<span class="boltbadge"><svg viewBox="0 0 24 24" width="9" height="9">
+             <path fill="currentColor" d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
+           </svg></span>`
+        : "";
+      jackContent = `${badge}<span class="devicon mdi ${dev.icon.replace("mdi:", "mdi-")}"></span>${watts}`;
     } else if (powered && !p.pending) {
       jackContent = `<span class="bolt"><svg viewBox="0 0 24 24" width="15" height="15">
            <path fill="currentColor" d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
@@ -394,12 +421,66 @@ async function togglePort(id, on) {
   }
 }
 
+// Icon picker: curated PoE-relevant set shown by default; typing in the
+// icon field searches the full MDI catalog (meta.json fetched lazily
+// from the same CDN as the font; falls back to the curated set offline).
+const CURATED_ICONS = [
+  "cctv", "camera", "video", "doorbell-video", "webcam",
+  "access-point", "router-wireless", "router-network", "wifi", "antenna",
+  "phone-voip", "deskphone", "printer", "laptop", "desktop-tower",
+  "monitor", "television", "server", "server-network", "nas",
+  "raspberry-pi", "chip", "lightbulb", "led-strip-variant", "speaker",
+  "cast", "tablet", "cellphone", "thermostat", "motion-sensor",
+  "smoke-detector", "lock-smart", "garage", "solar-power", "ev-station",
+  "robot-vacuum", "alarm-light", "audio-video", "gamepad-variant", "lan",
+];
+let mdiCatalog = null;   // [{name, search}] or null while not loaded
+let pickerTimer = null;
+
+async function loadMdiCatalog() {
+  if (mdiCatalog) return mdiCatalog;
+  try {
+    const r = await fetch("https://cdn.jsdelivr.net/npm/@mdi/svg@7.4.47/meta.json");
+    mdiCatalog = (await r.json()).map(i => ({
+      name: i.name,
+      search: [i.name, ...(i.aliases ?? []), ...(i.tags ?? [])].join(" ").toLowerCase(),
+    }));
+  } catch { /* offline: curated set still works */ }
+  return mdiCatalog;
+}
+
+function renderPicker(names) {
+  const current = $("e-icon").value.trim().replace(/^mdi:/, "");
+  $("iconpicker").innerHTML = names.length
+    ? names.slice(0, 80).map(n =>
+        `<button class="pick mdi mdi-${n}${n === current ? " sel" : ""}"
+                 title="${n}" onclick="pickIcon('${n}')"></button>`).join("")
+    : '<div class="empty">No icons match — check the MDI catalog link below</div>';
+}
+
+function pickIcon(name) {
+  $("e-icon").value = `mdi:${name}`;
+  updateIconPreview();
+  renderPicker([name]);
+}
+
+async function updatePicker() {
+  const q = $("e-icon").value.trim().replace(/^mdi:/, "").toLowerCase();
+  if (!q) { renderPicker(CURATED_ICONS); return; }
+  const catalog = await loadMdiCatalog();
+  renderPicker(catalog
+    ? catalog.filter(i => i.search.includes(q)).map(i => i.name)
+    : CURATED_ICONS.filter(n => n.includes(q)));
+}
+
 function openEdit() {
   const dev = state.ports[selected]?.connected_device;
   if (!dev?.mac_address) return;
   $("e-name").value = dev.custom_name ?? "";
   $("e-icon").value = dev.icon ?? "";
   updateIconPreview();
+  updatePicker();
+  loadMdiCatalog();  // warm the catalog while the user types the name
   editing = true;
   render();
   $("e-name").focus();
@@ -434,7 +515,11 @@ async function saveLabel() {
 $("editbtn").onclick = openEdit;
 $("e-cancel").onclick = () => { editing = false; render(); };
 $("e-save").onclick = saveLabel;
-$("e-icon").oninput = updateIconPreview;
+$("e-icon").oninput = () => {
+  updateIconPreview();
+  clearTimeout(pickerTimer);
+  pickerTimer = setTimeout(updatePicker, 200);  // debounce catalog search
+};
 
 async function resetPort(id) {
   const num = parseInt(id.replace("poe", "")) + 1;
