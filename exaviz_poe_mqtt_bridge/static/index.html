@@ -273,7 +273,8 @@ function fmtUptime(s) {
 function renderStats() {
   const ports = Object.values(state.ports);
   const enabled = ports.filter(p => p.enabled).length;
-  const active = ports.filter(p => (p.power_watts ?? 0) >= 0.5).length;
+  const poeActive = ports.filter(p => (p.power_watts ?? 0) >= 0.5).length;
+  const linked = ports.filter(p => p.link_state === "up").length;
   const watts = ports.reduce((s, p) => s + (p.power_watts || 0), 0);
   const temps = ports.map(p => p.temperature_celsius).filter(t => t > 0);
   const up = state.uplink;
@@ -281,7 +282,7 @@ function renderStats() {
 
   const stats = [
     ["Enabled", `${enabled} / ${ports.length}`],
-    ["Active", `${active}`],
+    ["Active", `${linked} <small>linked</small> · ${poeActive} <small>PoE</small>`],
     ["Total power", fmt(watts, "W")],
     ["PSE temp (max)", temps.length ? fmt(Math.max(...temps), "°C") : "—"],
     ["WAN IP", up?.ip ? `${up.ip} <small>${up.interface ?? ""}</small>` : "—"],

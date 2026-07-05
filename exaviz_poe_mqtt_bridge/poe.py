@@ -259,7 +259,13 @@ _IPV6_NEIGH = re.compile(
 
 
 async def _resolve_hostname(ip_address: str) -> str | None:
-    """Best-effort reverse DNS lookup with a short timeout."""
+    """Best-effort hostname lookup: reverse DNS, then mDNS.
+
+    Reverse DNS only works when the router publishes PTR records for its
+    DHCP leases; the mDNS fallback (avahi-resolve, if installed) catches
+    devices that announce themselves (cameras, IoT).  Devices that do
+    neither simply have no discoverable name.
+    """
     import socket
 
     def _lookup() -> str | None:
@@ -269,9 +275,19 @@ async def _resolve_hostname(ip_address: str) -> str | None:
             return None
 
     try:
-        return await asyncio.wait_for(asyncio.to_thread(_lookup), timeout=2)
+        hostname = await asyncio.wait_for(asyncio.to_thread(_lookup), timeout=2)
     except asyncio.TimeoutError:
-        return None
+        hostname = None
+    if hostname:
+        return hostname
+
+    # mDNS: "avahi-resolve -a <ip>" prints "<ip>\t<name>.local" on success
+    text = await _run(["timeout", "2", "avahi-resolve", "-a", ip_address])
+    if text:
+        parts = text.split()
+        if len(parts) >= 2 and parts[0] == ip_address:
+            return parts[1]
+    return None
 
 
 def parse_fdb_macs(fdb_text: str, interface: str) -> list[str]:
